@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.env
+*.env
+!config/*.env.example
+evidence/
+network-inspect.json
+volume-inspect.json

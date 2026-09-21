@@ -1,0 +1,42 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        VERSION: ${APP_VERSION:-5.0}
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-DEV}
+      APP_VERSION: ${APP_VERSION:-5.0}
+      DB_HOST: ${DB_HOST:-customer-db-dev}
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-customer_dev}
+      DB_USER: ${DB_USER:-customer_dev}
+      DB_PASSWORD: ${DB_PASSWORD:-devpassword}
+    ports:
+      - "${HOST_PORT:-8081}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [app-net]
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${DB_NAME:-customer_dev}
+      POSTGRES_USER: ${DB_USER:-customer_dev}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-devpassword}
+    volumes:
+      - customer-db-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-customer_dev} -d ${DB_NAME:-customer_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [app-net]
+
+networks:
+  app-net:
+
+volumes:
+  customer-db-data:
