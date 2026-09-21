@@ -11,8 +11,10 @@ pipeline {
     environment {
         IMAGE_NAME = 'customer-app'
         CONTAINER_NAME = "customer-app-${params.ENVIRONMENT.toLowerCase()}"
-        // Map native host ports precisely out of your architecture specifications (8081, 8082, 8083)
-        APP_PORT = "${params.ENVIRONMENT == 'PRODUCTION' ? '8083' : (params.ENVIRONMENT == 'UAT' ? '8082' : '8081')}"
+        
+        // CUSTOM PORT DEFINITIONS MAPPED Cleanly: DEV=9081 | UAT=9082 | PRODUCTION=9083
+        APP_PORT = "${params.ENVIRONMENT == 'PRODUCTION' ? '9083' : (params.ENVIRONMENT == 'UAT' ? '9082' : '9081')}"
+        
         OLD_VERSION = 'Unknown'
         NEW_VERSION = "${params.VERSION}"
     }
@@ -108,7 +110,7 @@ pipeline {
                         bat "docker stop ${tempContainer} 2>nul || exit 0"
                         bat "docker rm ${tempContainer} 2>nul || exit 0"
                         
-                        // Re-launch cleanly on the core assigned host operational port (8081, 8082, or 8083)
+                        // Re-launch cleanly on the core assigned host operational custom ports (9081, 9082, or 9083)
                         bat "docker run -d --name ${env.CONTAINER_NAME} -p ${env.APP_PORT}:8080 ${IMAGE_NAME}:${params.VERSION}"
                         currentBuild.description = 'DEPLOYMENT_SUCCESSFUL'
                     }
