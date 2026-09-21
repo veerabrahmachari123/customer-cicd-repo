@@ -10,31 +10,31 @@ pipeline {
         choice(
             name: 'ENVIRONMENT',
             choices: ['DEV', 'UAT', 'PRODUCTION'],
-            description: 'Select deployment environment'
+            description: 'Deployment environment'
         )
 
         choice(
             name: 'ACTION',
             choices: ['DEPLOY', 'ROLLBACK'],
-            description: 'DEPLOY a new version or ROLLBACK to an existing image version'
+            description: 'Deployment action'
         )
 
         string(
             name: 'VERSION',
             defaultValue: '5.0',
-            description: 'Docker image version, for example 5.0 or 5.1'
+            description: 'Application version, for example 5.0 or 5.1'
         )
 
         choice(
             name: 'RUN_TESTS',
             choices: ['YES', 'NO'],
-            description: 'Run application tests before deployment'
+            description: 'Run application tests'
         )
 
         choice(
             name: 'PRODUCTION_CONFIRMATION',
             choices: ['NO', 'YES'],
-            description: 'Must be YES for any PRODUCTION deployment or rollback'
+            description: 'Required for PRODUCTION'
         )
     }
 
@@ -42,21 +42,6 @@ pipeline {
         REPO_URL = 'https://github.com/veerabrahmachari123/customer-cicd-repo.git'
         IMAGE_REPOSITORY = 'customer-app'
         CONTAINER_PORT = '8080'
-
-        GIT_BRANCH = ''
-        NETWORK = ''
-        APP_CONTAINER = ''
-        DB_CONTAINER = ''
-        DB_VOLUME = ''
-        DB_HOST = ''
-        DB_NAME = ''
-        DB_USER = ''
-        HOST_PORT = ''
-        IMAGE = ''
-
-        PREVIOUS_IMAGE = ''
-        PREVIOUS_VERSION = ''
-        DEPLOY_STARTED = 'false'
     }
 
     stages {
@@ -67,45 +52,46 @@ pipeline {
 
                     if (params.ENVIRONMENT == 'DEV') {
 
-                        env.GIT_BRANCH = 'develop'
-                        env.NETWORK = 'customer-dev-net'
-                        env.APP_CONTAINER = 'customer-app-dev'
-                        env.DB_CONTAINER = 'customer-db-dev'
-                        env.DB_VOLUME = 'customer-db-dev-data'
-                        env.DB_HOST = 'customer-db-dev'
-                        env.DB_NAME = 'customer_dev'
-                        env.DB_USER = 'customer_dev'
-                        env.HOST_PORT = '8081'
+                        env.DEPLOY_GIT_BRANCH = 'develop'
+                        env.DEPLOY_NETWORK = 'customer-dev-net'
+                        env.DEPLOY_APP_CONTAINER = 'customer-app-dev'
+                        env.DEPLOY_DB_CONTAINER = 'customer-db-dev'
+                        env.DEPLOY_DB_VOLUME = 'customer-db-dev-data'
+                        env.DEPLOY_DB_HOST = 'customer-db-dev'
+                        env.DEPLOY_DB_NAME = 'customer_dev'
+                        env.DEPLOY_DB_USER = 'customer_dev'
+                        env.DEPLOY_HOST_PORT = '8081'
 
                     } else if (params.ENVIRONMENT == 'UAT') {
 
-                        env.GIT_BRANCH = 'release'
-                        env.NETWORK = 'customer-uat-net'
-                        env.APP_CONTAINER = 'customer-app-uat'
-                        env.DB_CONTAINER = 'customer-db-uat'
-                        env.DB_VOLUME = 'customer-db-uat-data'
-                        env.DB_HOST = 'customer-db-uat'
-                        env.DB_NAME = 'customer_uat'
-                        env.DB_USER = 'customer_uat'
-                        env.HOST_PORT = '8082'
+                        env.DEPLOY_GIT_BRANCH = 'release'
+                        env.DEPLOY_NETWORK = 'customer-uat-net'
+                        env.DEPLOY_APP_CONTAINER = 'customer-app-uat'
+                        env.DEPLOY_DB_CONTAINER = 'customer-db-uat'
+                        env.DEPLOY_DB_VOLUME = 'customer-db-uat-data'
+                        env.DEPLOY_DB_HOST = 'customer-db-uat'
+                        env.DEPLOY_DB_NAME = 'customer_uat'
+                        env.DEPLOY_DB_USER = 'customer_uat'
+                        env.DEPLOY_HOST_PORT = '8082'
 
                     } else if (params.ENVIRONMENT == 'PRODUCTION') {
 
-                        env.GIT_BRANCH = 'main'
-                        env.NETWORK = 'customer-prod-net'
-                        env.APP_CONTAINER = 'customer-app-prod'
-                        env.DB_CONTAINER = 'customer-db-prod'
-                        env.DB_VOLUME = 'customer-db-prod-data'
-                        env.DB_HOST = 'customer-db-prod'
-                        env.DB_NAME = 'customer_prod'
-                        env.DB_USER = 'customer_prod'
-                        env.HOST_PORT = '8083'
+                        env.DEPLOY_GIT_BRANCH = 'main'
+                        env.DEPLOY_NETWORK = 'customer-prod-net'
+                        env.DEPLOY_APP_CONTAINER = 'customer-app-prod'
+                        env.DEPLOY_DB_CONTAINER = 'customer-db-prod'
+                        env.DEPLOY_DB_VOLUME = 'customer-db-prod-data'
+                        env.DEPLOY_DB_HOST = 'customer-db-prod'
+                        env.DEPLOY_DB_NAME = 'customer_prod'
+                        env.DEPLOY_DB_USER = 'customer_prod'
+                        env.DEPLOY_HOST_PORT = '8083'
 
                     } else {
                         error("Invalid environment: ${params.ENVIRONMENT}")
                     }
 
-                    env.IMAGE = "${env.IMAGE_REPOSITORY}:${params.VERSION.trim()}"
+                    env.DEPLOY_VERSION = params.VERSION.trim()
+                    env.DEPLOY_IMAGE = "${env.IMAGE_REPOSITORY}:${env.DEPLOY_VERSION}"
 
                     echo """
 ============================================================
@@ -113,18 +99,18 @@ RESOLVED DEPLOYMENT CONFIGURATION
 ============================================================
 Environment           : ${params.ENVIRONMENT}
 Action                : ${params.ACTION}
-Version               : ${params.VERSION.trim()}
-Git Branch            : ${env.GIT_BRANCH}
-Network               : ${env.NETWORK}
-Application Container : ${env.APP_CONTAINER}
-Database Container    : ${env.DB_CONTAINER}
-Database Volume       : ${env.DB_VOLUME}
-Database Host         : ${env.DB_HOST}
-Database Name         : ${env.DB_NAME}
-Database User         : ${env.DB_USER}
-Host Port             : ${env.HOST_PORT}
+Version               : ${env.DEPLOY_VERSION}
+Git Branch            : ${env.DEPLOY_GIT_BRANCH}
+Network               : ${env.DEPLOY_NETWORK}
+Application Container : ${env.DEPLOY_APP_CONTAINER}
+Database Container    : ${env.DEPLOY_DB_CONTAINER}
+Database Volume       : ${env.DEPLOY_DB_VOLUME}
+Database Host         : ${env.DEPLOY_DB_HOST}
+Database Name         : ${env.DEPLOY_DB_NAME}
+Database User         : ${env.DEPLOY_DB_USER}
+Host Port             : ${env.DEPLOY_HOST_PORT}
 Container Port        : ${env.CONTAINER_PORT}
-Docker Image          : ${env.IMAGE}
+Docker Image          : ${env.DEPLOY_IMAGE}
 Run Tests             : ${params.RUN_TESTS}
 ============================================================
 """
@@ -136,45 +122,31 @@ Run Tests             : ${params.RUN_TESTS}
             steps {
                 script {
 
-                    String version = params.VERSION.trim()
+                    def version = params.VERSION.trim()
 
                     if (!version) {
                         error('VERSION cannot be empty.')
                     }
 
                     if (!(version ==~ /^[A-Za-z0-9][A-Za-z0-9_.-]*$/)) {
-                        error("Invalid VERSION '${version}'. Use values such as 5.0 or 5.1.")
-                    }
-
-                    if (!(params.ENVIRONMENT in ['DEV', 'UAT', 'PRODUCTION'])) {
-                        error("Invalid ENVIRONMENT: ${params.ENVIRONMENT}")
-                    }
-
-                    if (!(params.ACTION in ['DEPLOY', 'ROLLBACK'])) {
-                        error("Invalid ACTION: ${params.ACTION}")
-                    }
-
-                    if (!(params.RUN_TESTS in ['YES', 'NO'])) {
-                        error("Invalid RUN_TESTS value: ${params.RUN_TESTS}")
-                    }
-
-                    if (!(params.PRODUCTION_CONFIRMATION in ['YES', 'NO'])) {
-                        error("Invalid PRODUCTION_CONFIRMATION value.")
+                        error(
+                            "Invalid VERSION '${version}'. " +
+                            "Use values such as 5.0 or 5.1."
+                        )
                     }
 
                     if (params.ENVIRONMENT == 'PRODUCTION' &&
                         params.PRODUCTION_CONFIRMATION != 'YES') {
 
                         error(
-                            'PRODUCTION deployment/rollback requires ' +
-                            'PRODUCTION_CONFIRMATION=YES.'
+                            'PRODUCTION requires PRODUCTION_CONFIRMATION=YES.'
                         )
                     }
 
                     echo "Environment validated: ${params.ENVIRONMENT}"
                     echo "Action validated: ${params.ACTION}"
                     echo "Version validated: ${version}"
-                    echo "Git branch validated: ${env.GIT_BRANCH}"
+                    echo "Git branch validated: ${env.DEPLOY_GIT_BRANCH}"
                 }
             }
         }
@@ -184,10 +156,13 @@ Run Tests             : ${params.RUN_TESTS}
                 bat '''
                     @echo off
                     docker version
+
                     if errorlevel 1 (
                         echo Docker is not available.
                         exit /b 1
                     )
+
+                    echo Docker is available.
                 '''
             }
         }
@@ -196,12 +171,12 @@ Run Tests             : ${params.RUN_TESTS}
             steps {
                 script {
 
-                    echo "Checking out branch: ${env.GIT_BRANCH}"
+                    echo "Checking out branch: ${env.DEPLOY_GIT_BRANCH}"
 
                     checkout([
                         $class: 'GitSCM',
                         branches: [
-                            [name: "*/${env.GIT_BRANCH}"]
+                            [name: "*/${env.DEPLOY_GIT_BRANCH}"]
                         ],
                         doGenerateSubmoduleConfigurations: false,
                         extensions: [],
@@ -212,9 +187,17 @@ Run Tests             : ${params.RUN_TESTS}
 
                     bat '''
                         @echo off
-                        git status --short --branch
+
+                        echo ===== CURRENT BRANCH =====
                         git branch --show-current
+
+                        echo.
+                        echo ===== LAST COMMIT =====
                         git log -1 --oneline
+
+                        echo.
+                        echo ===== STATUS =====
+                        git status --short --branch
                     '''
                 }
             }
@@ -231,7 +214,7 @@ Run Tests             : ${params.RUN_TESTS}
                 bat '''
                     @echo off
 
-                    echo Running application tests inside Python Docker container...
+                    echo Running tests...
 
                     docker run --rm ^
                       -v "%CD%:/workspace" ^
@@ -240,11 +223,11 @@ Run Tests             : ${params.RUN_TESTS}
                       sh -c "pip install --no-cache-dir -q -r app/requirements.txt && pytest -q app/test_app.py"
 
                     if errorlevel 1 (
-                        echo Application tests failed.
+                        echo Tests FAILED.
                         exit /b 1
                     )
 
-                    echo Application tests passed successfully.
+                    echo Tests PASSED.
                 '''
             }
         }
@@ -261,35 +244,34 @@ Run Tests             : ${params.RUN_TESTS}
                         returnStatus: true,
                         script: """
                             @echo off
-                            docker inspect ${env.APP_CONTAINER} --format="{{.Config.Image}}" > previous-image.txt
+                            docker inspect ${env.DEPLOY_APP_CONTAINER} --format="{{.Config.Image}}" > previous-image.txt
                         """
                     )
 
                     if (result == 0) {
 
-                        env.PREVIOUS_IMAGE = readFile(
-                            'previous-image.txt'
-                        ).trim()
+                        env.PREVIOUS_IMAGE =
+                            readFile('previous-image.txt').trim()
 
                         if (env.PREVIOUS_IMAGE) {
 
-                            int lastColon =
+                            int colon =
                                 env.PREVIOUS_IMAGE.lastIndexOf(':')
 
-                            if (lastColon >= 0) {
+                            if (colon >= 0) {
                                 env.PREVIOUS_VERSION =
-                                    env.PREVIOUS_IMAGE.substring(lastColon + 1)
+                                    env.PREVIOUS_IMAGE.substring(colon + 1)
                             }
 
                             echo """
-Previous application image : ${env.PREVIOUS_IMAGE}
-Previous application version: ${env.PREVIOUS_VERSION}
+Previous Image   : ${env.PREVIOUS_IMAGE}
+Previous Version : ${env.PREVIOUS_VERSION}
 """
                         }
 
                     } else {
 
-                        echo 'No existing application container found.'
+                        echo 'No previous application container found.'
                     }
                 }
             }
@@ -303,23 +285,27 @@ Previous application version: ${env.PREVIOUS_VERSION}
                         returnStatus: true,
                         script: """
                             @echo off
-                            docker network inspect ${env.NETWORK} >nul 2>&1
+                            docker network inspect ${env.DEPLOY_NETWORK} >nul 2>&1
                         """
                     )
 
                     if (result != 0) {
 
-                        echo "Creating Docker network: ${env.NETWORK}"
+                        echo "Creating network ${env.DEPLOY_NETWORK}"
 
                         bat """
                             @echo off
-                            docker network create ${env.NETWORK}
-                            if errorlevel 1 exit /b 1
+                            docker network create ${env.DEPLOY_NETWORK}
+
+                            if errorlevel 1 (
+                                echo Failed to create Docker network.
+                                exit /b 1
+                            )
                         """
 
                     } else {
 
-                        echo "Docker network already exists: ${env.NETWORK}"
+                        echo "Network already exists: ${env.DEPLOY_NETWORK}"
                     }
                 }
             }
@@ -333,23 +319,27 @@ Previous application version: ${env.PREVIOUS_VERSION}
                         returnStatus: true,
                         script: """
                             @echo off
-                            docker volume inspect ${env.DB_VOLUME} >nul 2>&1
+                            docker volume inspect ${env.DEPLOY_DB_VOLUME} >nul 2>&1
                         """
                     )
 
                     if (result != 0) {
 
-                        echo "Creating database volume: ${env.DB_VOLUME}"
+                        echo "Creating volume ${env.DEPLOY_DB_VOLUME}"
 
                         bat """
                             @echo off
-                            docker volume create ${env.DB_VOLUME}
-                            if errorlevel 1 exit /b 1
+                            docker volume create ${env.DEPLOY_DB_VOLUME}
+
+                            if errorlevel 1 (
+                                echo Failed to create database volume.
+                                exit /b 1
+                            )
                         """
 
                     } else {
 
-                        echo "Database volume already exists: ${env.DB_VOLUME}"
+                        echo "Volume already exists: ${env.DEPLOY_DB_VOLUME}"
                     }
                 }
             }
@@ -361,17 +351,17 @@ Previous application version: ${env.PREVIOUS_VERSION}
 
                     if (params.ACTION == 'DEPLOY') {
 
-                        echo "Building Docker image: ${env.IMAGE}"
+                        echo "Building ${env.DEPLOY_IMAGE}"
 
                         bat """
                             @echo off
 
                             docker build ^
-                              --build-arg VERSION=${params.VERSION.trim()} ^
-                              -t ${env.IMAGE} .
+                              --build-arg VERSION=${env.DEPLOY_VERSION} ^
+                              -t ${env.DEPLOY_IMAGE} .
 
                             if errorlevel 1 (
-                                echo Docker image build failed.
+                                echo Docker build FAILED.
                                 exit /b 1
                             )
                         """
@@ -379,23 +369,24 @@ Previous application version: ${env.PREVIOUS_VERSION}
                     } else {
 
                         echo "Rollback requested."
-                        echo "Checking for existing image: ${env.IMAGE}"
+                        echo "Checking ${env.DEPLOY_IMAGE}"
 
                         int result = bat(
                             returnStatus: true,
                             script: """
                                 @echo off
-                                docker image inspect ${env.IMAGE} >nul 2>&1
+                                docker image inspect ${env.DEPLOY_IMAGE} >nul 2>&1
                             """
                         )
 
                         if (result != 0) {
+
                             error(
-                                "Rollback image ${env.IMAGE} does not exist locally."
+                                "Rollback image ${env.DEPLOY_IMAGE} does not exist."
                             )
                         }
 
-                        echo "Rollback image exists: ${env.IMAGE}"
+                        echo "Rollback image found."
                     }
                 }
             }
@@ -406,16 +397,19 @@ Previous application version: ${env.PREVIOUS_VERSION}
                 bat """
                     @echo off
 
-                    docker image inspect ${env.IMAGE}
+                    docker image inspect ${env.DEPLOY_IMAGE}
 
                     if errorlevel 1 (
-                        echo Docker image verification failed.
+                        echo Image verification FAILED.
                         exit /b 1
                     )
 
-                    echo Docker image verified:
-                    echo ${env.IMAGE}
+                    echo.
+                    echo Docker image verified successfully:
+                    echo ${env.DEPLOY_IMAGE}
 
+                    echo.
+                    echo ===== DOCKER IMAGES =====
                     docker images ${env.IMAGE_REPOSITORY}
                 """
             }
@@ -425,7 +419,7 @@ Previous application version: ${env.PREVIOUS_VERSION}
             steps {
                 script {
 
-                    String credentialId
+                    def credentialId
 
                     if (params.ENVIRONMENT == 'DEV') {
                         credentialId = 'db-dev'
@@ -435,17 +429,17 @@ Previous application version: ${env.PREVIOUS_VERSION}
                         credentialId = 'db-production'
                     }
 
-                    int containerExists = bat(
+                    int exists = bat(
                         returnStatus: true,
                         script: """
                             @echo off
-                            docker inspect ${env.DB_CONTAINER} >nul 2>&1
+                            docker inspect ${env.DEPLOY_DB_CONTAINER} >nul 2>&1
                         """
                     )
 
-                    if (containerExists != 0) {
+                    if (exists != 0) {
 
-                        echo "Creating database container: ${env.DB_CONTAINER}"
+                        echo "Creating database container..."
 
                         withCredentials([
                             usernamePassword(
@@ -459,18 +453,18 @@ Previous application version: ${env.PREVIOUS_VERSION}
                                 @echo off
 
                                 docker run -d ^
-                                  --name ${env.DB_CONTAINER} ^
-                                  --network ${env.NETWORK} ^
+                                  --name ${env.DEPLOY_DB_CONTAINER} ^
+                                  --network ${env.DEPLOY_NETWORK} ^
                                   --restart unless-stopped ^
-                                  -e POSTGRES_DB=${env.DB_NAME} ^
+                                  -e POSTGRES_DB=${env.DEPLOY_DB_NAME} ^
                                   -e POSTGRES_USER=%DB_USER_SECRET% ^
                                   -e POSTGRES_PASSWORD=%DB_PASSWORD_SECRET% ^
-                                  -v ${env.DB_VOLUME}:/var/lib/postgresql/data ^
+                                  -v ${env.DEPLOY_DB_VOLUME}:/var/lib/postgresql/data ^
                                   -v "%CD%\\\\db\\\\init.sql:/docker-entrypoint-initdb.d/init.sql:ro" ^
                                   postgres:16
 
                                 if errorlevel 1 (
-                                    echo Database container creation failed.
+                                    echo Database deployment FAILED.
                                     exit /b 1
                                 )
                             """
@@ -484,33 +478,32 @@ Previous application version: ${env.PREVIOUS_VERSION}
                             returnStatus: true,
                             script: """
                                 @echo off
-                                docker inspect ${env.DB_CONTAINER} --format="{{.State.Running}}" | findstr /I "true" >nul
+                                docker inspect ${env.DEPLOY_DB_CONTAINER} --format="{{.State.Running}}" | findstr /I "true" >nul
                             """
                         )
 
                         if (running != 0) {
 
-                            echo "Starting existing database container..."
-
                             bat """
                                 @echo off
-                                docker start ${env.DB_CONTAINER}
+                                docker start ${env.DEPLOY_DB_CONTAINER}
+
                                 if errorlevel 1 exit /b 1
                             """
                         }
 
-                        echo "Ensuring database is connected to ${env.NETWORK}..."
+                        echo "Ensuring database is connected to expected network."
 
                         bat(
                             returnStatus: true,
                             script: """
                                 @echo off
-                                docker network connect ${env.NETWORK} ${env.DB_CONTAINER}
+                                docker network connect ${env.DEPLOY_NETWORK} ${env.DEPLOY_DB_CONTAINER}
                             """
                         )
                     }
 
-                    echo "Database container ready: ${env.DB_CONTAINER}"
+                    echo "Database ready: ${env.DEPLOY_DB_CONTAINER}"
                 }
             }
         }
@@ -519,7 +512,7 @@ Previous application version: ${env.PREVIOUS_VERSION}
             steps {
                 script {
 
-                    String credentialId
+                    def credentialId
 
                     if (params.ENVIRONMENT == 'DEV') {
                         credentialId = 'db-dev'
@@ -529,7 +522,7 @@ Previous application version: ${env.PREVIOUS_VERSION}
                         credentialId = 'db-production'
                     }
 
-                    int databaseReady = 1
+                    int ready = 1
 
                     withCredentials([
                         usernamePassword(
@@ -541,27 +534,33 @@ Previous application version: ${env.PREVIOUS_VERSION}
 
                         for (int attempt = 1; attempt <= 30; attempt++) {
 
-                            databaseReady = bat(
+                            ready = bat(
                                 returnStatus: true,
                                 script: """
                                     @echo off
-                                    docker exec ${env.DB_CONTAINER} pg_isready -U %DB_USER_SECRET% -d ${env.DB_NAME}
+
+                                    docker exec ${env.DEPLOY_DB_CONTAINER} ^
+                                      pg_isready ^
+                                      -U %DB_USER_SECRET% ^
+                                      -d ${env.DEPLOY_DB_NAME}
                                 """
                             )
 
-                            if (databaseReady == 0) {
-                                echo "Database is ready."
+                            if (ready == 0) {
+
+                                echo 'Database is READY.'
                                 break
                             }
 
-                            echo "Database not ready yet. Attempt ${attempt}/30"
+                            echo "Database not ready. Attempt ${attempt}/30"
                             sleep time: 2, unit: 'SECONDS'
                         }
                     }
 
-                    if (databaseReady != 0) {
+                    if (ready != 0) {
+
                         error(
-                            "Database ${env.DB_CONTAINER} did not become ready."
+                            "Database ${env.DEPLOY_DB_CONTAINER} did not become ready."
                         )
                     }
                 }
@@ -572,7 +571,7 @@ Previous application version: ${env.PREVIOUS_VERSION}
             steps {
                 script {
 
-                    String credentialId
+                    def credentialId
 
                     if (params.ENVIRONMENT == 'DEV') {
                         credentialId = 'db-dev'
@@ -584,13 +583,13 @@ Previous application version: ${env.PREVIOUS_VERSION}
 
                     env.DEPLOY_STARTED = 'true'
 
-                    echo "Deploying application image: ${env.IMAGE}"
+                    echo "Deploying application..."
 
                     bat(
                         returnStatus: true,
                         script: """
                             @echo off
-                            docker rm -f ${env.APP_CONTAINER} >nul 2>&1
+                            docker rm -f ${env.DEPLOY_APP_CONTAINER} >nul 2>&1
                         """
                     )
 
@@ -606,27 +605,27 @@ Previous application version: ${env.PREVIOUS_VERSION}
                             @echo off
 
                             docker run -d ^
-                              --name ${env.APP_CONTAINER} ^
-                              --network ${env.NETWORK} ^
+                              --name ${env.DEPLOY_APP_CONTAINER} ^
+                              --network ${env.DEPLOY_NETWORK} ^
                               --restart unless-stopped ^
-                              -p ${env.HOST_PORT}:${env.CONTAINER_PORT} ^
+                              -p ${env.DEPLOY_HOST_PORT}:${env.CONTAINER_PORT} ^
                               -e ENVIRONMENT=${params.ENVIRONMENT} ^
-                              -e APP_VERSION=${params.VERSION.trim()} ^
-                              -e DB_HOST=${env.DB_HOST} ^
+                              -e APP_VERSION=${env.DEPLOY_VERSION} ^
+                              -e DB_HOST=${env.DEPLOY_DB_HOST} ^
                               -e DB_PORT=5432 ^
-                              -e DB_NAME=${env.DB_NAME} ^
+                              -e DB_NAME=${env.DEPLOY_DB_NAME} ^
                               -e DB_USER=%DB_USER_SECRET% ^
                               -e DB_PASSWORD=%DB_PASSWORD_SECRET% ^
-                              ${env.IMAGE}
+                              ${env.DEPLOY_IMAGE}
 
                             if errorlevel 1 (
-                                echo Application container failed to start.
+                                echo Application deployment FAILED.
                                 exit /b 1
                             )
                         """
                     }
 
-                    echo "Application container started: ${env.APP_CONTAINER}"
+                    echo "Application started: ${env.DEPLOY_APP_CONTAINER}"
                 }
             }
         }
@@ -637,18 +636,18 @@ Previous application version: ${env.PREVIOUS_VERSION}
                     @echo off
 
                     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-                    "\$app=(docker inspect -f '{{.State.Running}}' '${env.APP_CONTAINER}'); ^
-                     \$db=(docker inspect -f '{{.State.Running}}' '${env.DB_CONTAINER}'); ^
+                    "\$app=(docker inspect -f '{{.State.Running}}' '${env.DEPLOY_APP_CONTAINER}'); ^
+                     \$db=(docker inspect -f '{{.State.Running}}' '${env.DEPLOY_DB_CONTAINER}'); ^
                      if(\$app -ne 'true'){Write-Error 'Application container is not running';exit 1}; ^
                      if(\$db -ne 'true'){Write-Error 'Database container is not running';exit 1}; ^
-                     Write-Host 'Application container is RUNNING'; ^
-                     Write-Host 'Database container is RUNNING'"
+                     Write-Host 'Application: RUNNING'; ^
+                     Write-Host 'Database: RUNNING'"
 
                     if errorlevel 1 exit /b 1
 
                     echo.
-                    echo ===== DOCKER PS =====
-                    docker ps --filter "name=${env.APP_CONTAINER}" --filter "name=${env.DB_CONTAINER}"
+                    echo ===== RUNNING CONTAINERS =====
+                    docker ps
                 """
             }
         }
@@ -659,19 +658,15 @@ Previous application version: ${env.PREVIOUS_VERSION}
                     @echo off
 
                     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-                    "\$n=(docker network inspect '${env.NETWORK}' | ConvertFrom-Json)[0]; ^
+                    "\$n=(docker network inspect '${env.DEPLOY_NETWORK}' | ConvertFrom-Json)[0]; ^
                      \$names=@(\$n.Containers.PSObject.Properties | ForEach-Object { \$_.Value.Name }); ^
-                     if(\$names -notcontains '${env.APP_CONTAINER}'){Write-Error 'Application is not connected to expected network';exit 1}; ^
-                     if(\$names -notcontains '${env.DB_CONTAINER}'){Write-Error 'Database is not connected to expected network';exit 1}; ^
-                     Write-Host 'Expected network: ${env.NETWORK}'; ^
-                     Write-Host 'Connected containers:'; ^
+                     if(\$names -notcontains '${env.DEPLOY_APP_CONTAINER}'){Write-Error 'Application is not on expected network';exit 1}; ^
+                     if(\$names -notcontains '${env.DEPLOY_DB_CONTAINER}'){Write-Error 'Database is not on expected network';exit 1}; ^
+                     Write-Host 'Network validation successful'; ^
+                     Write-Host 'Network: ${env.DEPLOY_NETWORK}'; ^
                      \$names"
 
                     if errorlevel 1 exit /b 1
-
-                    echo.
-                    echo ===== NETWORK INSPECT =====
-                    docker network inspect ${env.NETWORK}
                 """
             }
         }
@@ -682,10 +677,10 @@ Previous application version: ${env.PREVIOUS_VERSION}
                     @echo off
 
                     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-                    "\$r=Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:${env.HOST_PORT}/health' -TimeoutSec 15; ^
+                    "\$r=Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:${env.DEPLOY_HOST_PORT}/health' -TimeoutSec 15; ^
                      if(\$r.StatusCode -ne 200){Write-Error 'Health check failed';exit 1}; ^
-                     Write-Host 'Health check HTTP status:' \$r.StatusCode; ^
-                     Write-Host 'Health response:' \$r.Content"
+                     Write-Host 'HTTP Status:' \$r.StatusCode; ^
+                     Write-Host 'Response:' \$r.Content"
 
                     if errorlevel 1 exit /b 1
                 """
@@ -697,10 +692,10 @@ Previous application version: ${env.PREVIOUS_VERSION}
                 bat """
                     @echo off
 
-                    docker exec ${env.APP_CONTAINER} python -c "import os,socket; h=os.environ['DB_HOST']; p=int(os.environ.get('DB_PORT','5432')); s=socket.create_connection((h,p),5); s.close(); print('DATABASE CONNECTIVITY SUCCESS:',h,p)"
+                    docker exec ${env.DEPLOY_APP_CONTAINER} python -c "import os,socket; h=os.environ['DB_HOST']; p=int(os.environ.get('DB_PORT','5432')); s=socket.create_connection((h,p),5); s.close(); print('DATABASE CONNECTIVITY SUCCESS:',h,p)"
 
                     if errorlevel 1 (
-                        echo Application cannot connect to database.
+                        echo Application to database connectivity FAILED.
                         exit /b 1
                     )
                 """
@@ -713,9 +708,9 @@ Previous application version: ${env.PREVIOUS_VERSION}
                     @echo off
 
                     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-                    "\$r=Invoke-RestMethod -Uri 'http://localhost:${env.HOST_PORT}/environment' -TimeoutSec 15; ^
-                     Write-Host 'Expected environment: ${params.ENVIRONMENT}'; ^
-                     Write-Host 'Actual environment  :' \$r.environment; ^
+                    "\$r=Invoke-RestMethod -Uri 'http://localhost:${env.DEPLOY_HOST_PORT}/environment' -TimeoutSec 15; ^
+                     Write-Host 'Expected:' '${params.ENVIRONMENT}'; ^
+                     Write-Host 'Actual  :' \$r.environment; ^
                      if(\$r.environment -ne '${params.ENVIRONMENT}'){Write-Error 'Environment mismatch';exit 1}"
 
                     if errorlevel 1 exit /b 1
@@ -729,10 +724,10 @@ Previous application version: ${env.PREVIOUS_VERSION}
                     @echo off
 
                     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-                    "\$r=Invoke-RestMethod -Uri 'http://localhost:${env.HOST_PORT}/version' -TimeoutSec 15; ^
-                     Write-Host 'Expected version: ${params.VERSION.trim()}'; ^
-                     Write-Host 'Actual version  :' \$r.version; ^
-                     if([string]\$r.version -ne '${params.VERSION.trim()}'){Write-Error 'Version mismatch';exit 1}"
+                    "\$r=Invoke-RestMethod -Uri 'http://localhost:${env.DEPLOY_HOST_PORT}/version' -TimeoutSec 15; ^
+                     Write-Host 'Expected:' '${env.DEPLOY_VERSION}'; ^
+                     Write-Host 'Actual  :' \$r.version; ^
+                     if([string]\$r.version -ne '${env.DEPLOY_VERSION}'){Write-Error 'Version mismatch';exit 1}"
 
                     if errorlevel 1 exit /b 1
                 """
@@ -745,48 +740,77 @@ Previous application version: ${env.PREVIOUS_VERSION}
                     @echo off
 
                     echo ===== DATABASE VOLUME =====
-                    docker volume inspect ${env.DB_VOLUME}
+                    docker volume inspect ${env.DEPLOY_DB_VOLUME}
 
                     if errorlevel 1 exit /b 1
 
                     echo.
-                    echo ===== APPLICATION PORT MAPPING =====
-                    docker port ${env.APP_CONTAINER}
+                    echo ===== PORT MAPPING =====
+                    docker port ${env.DEPLOY_APP_CONTAINER}
 
                     echo.
-                    echo Expected host port: ${env.HOST_PORT}
-                    echo Expected container port: ${env.CONTAINER_PORT}
+                    echo Expected:
+                    echo Host Port      : ${env.DEPLOY_HOST_PORT}
+                    echo Container Port : ${env.CONTAINER_PORT}
                 """
             }
         }
 
         stage('Deployment Successful') {
             steps {
-                script {
-
-                    echo """
+                echo """
 ============================================================
 DEPLOYMENT SUCCESSFUL
 ============================================================
 Environment : ${params.ENVIRONMENT}
 Action      : ${params.ACTION}
-Version     : ${params.VERSION.trim()}
-Branch      : ${env.GIT_BRANCH}
-Application : ${env.APP_CONTAINER}
-Database    : ${env.DB_CONTAINER}
-Network     : ${env.NETWORK}
-Host Port   : ${env.HOST_PORT}
-Image       : ${env.IMAGE}
+Version     : ${env.DEPLOY_VERSION}
+Branch      : ${env.DEPLOY_GIT_BRANCH}
+Application : ${env.DEPLOY_APP_CONTAINER}
+Database    : ${env.DEPLOY_DB_CONTAINER}
+Network     : ${env.DEPLOY_NETWORK}
+Volume      : ${env.DEPLOY_DB_VOLUME}
+Host Port   : ${env.DEPLOY_HOST_PORT}
+Image       : ${env.DEPLOY_IMAGE}
 ============================================================
 FINAL RESULT = SUCCESS
 ============================================================
 """
-                }
             }
         }
     }
 
     post {
+
+        always {
+            script {
+
+                echo 'Collecting deployment evidence...'
+
+                bat(
+                    returnStatus: true,
+                    script: """
+                        @echo off
+
+                        docker ps -a > evidence-docker-ps.txt
+
+                        docker network inspect ${env.DEPLOY_NETWORK} > evidence-network.txt
+
+                        docker volume inspect ${env.DEPLOY_DB_VOLUME} > evidence-volume.txt
+
+                        docker images ${env.IMAGE_REPOSITORY} > evidence-docker-images.txt
+
+                        docker port ${env.DEPLOY_APP_CONTAINER} > evidence-port.txt
+                    """
+                )
+
+                archiveArtifacts(
+                    artifacts: 'evidence-*.txt,previous-image.txt',
+                    allowEmptyArchive: true,
+                    fingerprint: true
+                )
+            }
+        }
 
         success {
             echo 'Jenkins pipeline completed successfully.'
@@ -801,16 +825,9 @@ PIPELINE FAILED
 ============================================================
 Environment : ${params.ENVIRONMENT}
 Action      : ${params.ACTION}
-Requested   : ${params.VERSION.trim()}
+Version     : ${params.VERSION}
 ============================================================
 """
-
-                /*
-                 * Automatic production rollback.
-                 *
-                 * If a production DEPLOY fails after replacing the
-                 * application container, restore the previous image.
-                 */
 
                 if (
                     params.ENVIRONMENT == 'PRODUCTION' &&
@@ -821,18 +838,16 @@ Requested   : ${params.VERSION.trim()}
 
                     echo """
 ============================================================
-AUTOMATIC PRODUCTION ROLLBACK
+STARTING AUTOMATIC PRODUCTION ROLLBACK
 ============================================================
 Previous Image   : ${env.PREVIOUS_IMAGE}
 Previous Version : ${env.PREVIOUS_VERSION}
 ============================================================
 """
 
-                    String credentialId = 'db-production'
-
                     withCredentials([
                         usernamePassword(
-                            credentialsId: credentialId,
+                            credentialsId: 'db-production',
                             usernameVariable: 'DB_USER_SECRET',
                             passwordVariable: 'DB_PASSWORD_SECRET'
                         )
@@ -842,7 +857,7 @@ Previous Version : ${env.PREVIOUS_VERSION}
                             returnStatus: true,
                             script: """
                                 @echo off
-                                docker rm -f ${env.APP_CONTAINER} >nul 2>&1
+                                docker rm -f ${env.DEPLOY_APP_CONTAINER} >nul 2>&1
                             """
                         )
 
@@ -850,67 +865,65 @@ Previous Version : ${env.PREVIOUS_VERSION}
                             @echo off
 
                             docker run -d ^
-                              --name ${env.APP_CONTAINER} ^
-                              --network ${env.NETWORK} ^
+                              --name ${env.DEPLOY_APP_CONTAINER} ^
+                              --network ${env.DEPLOY_NETWORK} ^
                               --restart unless-stopped ^
-                              -p ${env.HOST_PORT}:${env.CONTAINER_PORT} ^
+                              -p ${env.DEPLOY_HOST_PORT}:${env.CONTAINER_PORT} ^
                               -e ENVIRONMENT=PRODUCTION ^
                               -e APP_VERSION=${env.PREVIOUS_VERSION} ^
-                              -e DB_HOST=${env.DB_HOST} ^
+                              -e DB_HOST=${env.DEPLOY_DB_HOST} ^
                               -e DB_PORT=5432 ^
-                              -e DB_NAME=${env.DB_NAME} ^
+                              -e DB_NAME=${env.DEPLOY_DB_NAME} ^
                               -e DB_USER=%DB_USER_SECRET% ^
                               -e DB_PASSWORD=%DB_PASSWORD_SECRET% ^
                               ${env.PREVIOUS_IMAGE}
 
                             if errorlevel 1 (
-                                echo ROLLBACK APPLICATION FAILED.
+                                echo ROLLBACK FAILED.
                                 exit /b 1
                             )
                         """
                     }
 
-                    echo "Waiting for rolled-back application..."
-
                     sleep time: 5, unit: 'SECONDS'
 
-                    int rollbackHealth = bat(
+                    int health = bat(
                         returnStatus: true,
                         script: """
                             @echo off
 
                             powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-                            "\$r=Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:${env.HOST_PORT}/health' -TimeoutSec 15; ^
+                            "\$r=Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:${env.DEPLOY_HOST_PORT}/health' -TimeoutSec 15; ^
                              if(\$r.StatusCode -ne 200){exit 1}; ^
                              Write-Host \$r.Content"
                         """
                     )
 
-                    int rollbackVersion = bat(
+                    int version = bat(
                         returnStatus: true,
                         script: """
                             @echo off
 
                             powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-                            "\$r=Invoke-RestMethod -Uri 'http://localhost:${env.HOST_PORT}/version' -TimeoutSec 15; ^
+                            "\$r=Invoke-RestMethod -Uri 'http://localhost:${env.DEPLOY_HOST_PORT}/version' -TimeoutSec 15; ^
                              Write-Host 'Rollback version:' \$r.version; ^
                              if([string]\$r.version -ne '${env.PREVIOUS_VERSION}'){exit 1}"
                         """
                     )
 
-                    int rollbackDb = bat(
+                    int database = bat(
                         returnStatus: true,
                         script: """
                             @echo off
 
-                            docker exec ${env.APP_CONTAINER} python -c "import os,socket; h=os.environ['DB_HOST']; p=int(os.environ.get('DB_PORT','5432')); s=socket.create_connection((h,p),5); s.close(); print('ROLLBACK DATABASE CONNECTIVITY SUCCESS:',h,p)"
+                            docker exec ${env.DEPLOY_APP_CONTAINER} python -c "import os,socket; h=os.environ['DB_HOST']; p=int(os.environ.get('DB_PORT','5432')); s=socket.create_connection((h,p),5); s.close(); print('ROLLBACK DATABASE CONNECTIVITY SUCCESS:',h,p)"
                         """
                     )
 
                     if (
-                        rollbackHealth == 0 &&
-                        rollbackVersion == 0 &&
-                        rollbackDb == 0
+                        health == 0 &&
+                        version == 0 &&
+                        database == 0
                     ) {
 
                         echo """
@@ -920,9 +933,6 @@ ROLLBACK SUCCESSFUL
 Restored Image   : ${env.PREVIOUS_IMAGE}
 Restored Version : ${env.PREVIOUS_VERSION}
 Environment      : PRODUCTION
-Application      : ${env.APP_CONTAINER}
-Database         : ${env.DB_CONTAINER}
-Network          : ${env.NETWORK}
 ============================================================
 FINAL RESULT = ROLLBACK
 ============================================================
@@ -932,52 +942,20 @@ FINAL RESULT = ROLLBACK
 
                         echo """
 ============================================================
-ROLLBACK FAILED
+ROLLBACK VALIDATION FAILED
 ============================================================
-Health Check Result       : ${rollbackHealth}
-Version Validation Result : ${rollbackVersion}
-Database Connectivity     : ${rollbackDb}
+Health Result   : ${health}
+Version Result  : ${version}
+Database Result : ${database}
 ============================================================
 """
                     }
 
                 } else {
 
-                    echo 'Automatic rollback was not applicable.'
+                    echo 'Automatic rollback was not required.'
                 }
             }
-        }
-
-        always {
-            script {
-
-                echo 'Collecting deployment evidence...'
-
-                bat(
-                    returnStatus: true,
-                    script: """
-                        @echo off
-
-                        docker ps -a > evidence-docker-ps.txt
-
-                        docker network inspect ${env.NETWORK} > evidence-network.txt
-
-                        docker volume inspect ${env.DB_VOLUME} > evidence-volume.txt
-
-                        docker images ${env.IMAGE_REPOSITORY} > evidence-docker-images.txt
-
-                        docker port ${env.APP_CONTAINER} > evidence-port.txt
-                    """
-                )
-
-                archiveArtifacts(
-                    artifacts: 'evidence-*.txt,previous-image.txt',
-                    allowEmptyArchive: true,
-                    fingerprint: true
-                )
-            }
-
-            echo "Build completed with status: ${currentBuild.currentResult}"
         }
     }
 }
