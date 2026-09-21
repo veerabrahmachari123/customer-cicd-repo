@@ -2,13 +2,7 @@ pipeline {
 
     agent any
 
-    options {
-        skipDefaultCheckout(true)
-        timestamps()
-    }
-
     parameters {
-
         choice(
             name: 'ENVIRONMENT',
             choices: ['DEV', 'UAT', 'PRODUCTION'],
@@ -24,7 +18,7 @@ pipeline {
         string(
             name: 'VERSION',
             defaultValue: '5.0',
-            description: 'Docker image version'
+            description: 'Application version/image tag'
         )
 
         choice(
@@ -36,14 +30,29 @@ pipeline {
         choice(
             name: 'PRODUCTION_CONFIRMATION',
             choices: ['NO', 'YES'],
-            description: 'Must be YES for production deployment'
+            description: 'Must be YES for PRODUCTION deployment'
         )
     }
 
     environment {
         REPO_URL = 'https://github.com/veerabrahmachari123/customer-cicd-repo.git'
+
         IMAGE_REPOSITORY = 'customer-app'
         CONTAINER_PORT = '8080'
+
+        DEPLOY_GIT_BRANCH = ''
+        DEPLOY_NETWORK = ''
+        DEPLOY_APP_CONTAINER = ''
+        DEPLOY_DB_CONTAINER = ''
+        DEPLOY_DB_VOLUME = ''
+        DEPLOY_DB_HOST = ''
+        DEPLOY_DB_NAME = ''
+        DEPLOY_DB_USER = ''
+        DEPLOY_HOST_PORT = ''
+
+        DEPLOY_IMAGE = ''
+        PREVIOUS_IMAGE = 'NONE'
+        PREVIOUS_VERSION = 'NONE'
     }
 
     stages {
@@ -51,10 +60,6 @@ pipeline {
         stage('Resolve Configuration') {
             steps {
                 script {
-
-                    echo '============================================================'
-                    echo 'RESOLVED DEPLOYMENT CONFIGURATION'
-                    echo '============================================================'
 
                     if (params.ENVIRONMENT == 'DEV') {
 
@@ -80,7 +85,7 @@ pipeline {
                         env.DEPLOY_DB_USER = 'customer_uat'
                         env.DEPLOY_HOST_PORT = '8082'
 
-                    } else {
+                    } else if (params.ENVIRONMENT == 'PRODUCTION') {
 
                         env.DEPLOY_GIT_BRANCH = 'main'
                         env.DEPLOY_NETWORK = 'customer-prod-net'
@@ -93,12 +98,16 @@ pipeline {
                         env.DEPLOY_HOST_PORT = '8083'
                     }
 
-                    env.DEPLOY_VERSION = params.VERSION.trim()
-                    env.DEPLOY_IMAGE = "${env.IMAGE_REPOSITORY}:${env.DEPLOY_VERSION}"
+                    env.DEPLOY_IMAGE =
+                        "${env.IMAGE_REPOSITORY}:${params.VERSION}"
 
+                    echo ''
+                    echo '============================================================'
+                    echo 'RESOLVED DEPLOYMENT CONFIGURATION'
+                    echo '============================================================'
                     echo "Environment           : ${params.ENVIRONMENT}"
                     echo "Action                : ${params.ACTION}"
-                    echo "Version               : ${env.DEPLOY_VERSION}"
+                    echo "Version               : ${params.VERSION}"
                     echo "Git Branch            : ${env.DEPLOY_GIT_BRANCH}"
                     echo "Network               : ${env.DEPLOY_NETWORK}"
                     echo "Application Container : ${env.DEPLOY_APP_CONTAINER}"
@@ -111,8 +120,8 @@ pipeline {
                     echo "Container Port        : ${env.CONTAINER_PORT}"
                     echo "Docker Image          : ${env.DEPLOY_IMAGE}"
                     echo "Run Tests             : ${params.RUN_TESTS}"
-
                     echo '============================================================'
+                    echo ''
                 }
             }
         }
@@ -121,15 +130,30 @@ pipeline {
             steps {
                 script {
 
-                    if (!(params.VERSION ==~ /^[A-Za-z0-9][A-Za-z0-9_.-]*$/)) {
-                        error("Invalid VERSION: ${params.VERSION}")
+                    if (!(params.ENVIRONMENT in ['DEV', 'UAT', 'PRODUCTION'])) {
+                        error('Invalid environment selected.')
+                    }
+
+                    if (!(params.ACTION in ['DEPLOY', 'ROLLBACK'])) {
+                        error('Invalid action selected.')
+                    }
+
+                    if (!(params.VERSION ==~ /^[0-9]+(\\.[0-9]+)*$/)) {
+                        error(
+                            "Invalid VERSION '${params.VERSION}'. " +
+                            'Use values such as 5.0, 5.1 or 6.0.'
+                        )
                     }
 
                     if (
                         params.ENVIRONMENT == 'PRODUCTION' &&
+                        params.ACTION == 'DEPLOY' &&
                         params.PRODUCTION_CONFIRMATION != 'YES'
                     ) {
-                        error('Production deployment requires PRODUCTION_CONFIRMATION = YES')
+                        error(
+                            'Production deployment requires ' +
+                            'PRODUCTION_CONFIRMATION=YES.'
+                        )
                     }
 
                     echo "Environment validated: ${params.ENVIRONMENT}"
@@ -143,12 +167,7 @@ pipeline {
         stage('Check Docker') {
             steps {
                 bat '''
-                    echo ==========================================
-                    echo DOCKER CHECK
-                    echo ==========================================
-
                     docker version
-
                     if errorlevel 1 (
                         echo ERROR: Docker is not available.
                         exit /b 1
@@ -161,40 +180,33 @@ pipeline {
 
         stage('Checkout Correct Branch') {
             steps {
+                script {
 
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [
-                        [
+                    echo "Checking out branch: ${env.DEPLOY_GIT_BRANCH}"
+
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[
                             name: "*/${env.DEPLOY_GIT_BRANCH}"
-                        ]
-                    ],
-                    userRemoteConfigs: [
-                        [
-                            url: "${env.REPO_URL}"
-                        ]
-                    ],
-                    extensions: [
-                        [
-                            $class: 'CloneOption',
-                            shallow: false,
-                            noTags: false
-                        ]
-                    ]
-                ])
+                        ]],
+                        doGenerateSubmoduleConfigurations: false,
+                        extensions: [
+                            [$class: 'CleanBeforeCheckout']
+                        ],
+                        userRemoteConfigs: [[
+                            url: env.REPO_URL
+                        ]]
+                    ])
 
-                bat '''
-                    echo ==========================================
-                    echo CURRENT BRANCH / COMMIT
-                    echo ==========================================
+                    bat '''
+                        echo ===== CURRENT COMMIT =====
+                        git log -1 --oneline
 
-                    echo ===== LAST COMMIT =====
-                    git log -1 --oneline
-
-                    echo.
-                    echo ===== STATUS =====
-                    git status --short
-                '''
+                        echo.
+                        echo ===== GIT STATUS =====
+                        git status --short
+                    '''
+                }
             }
         }
 
@@ -207,18 +219,16 @@ pipeline {
 
             steps {
                 bat '''
-                    echo ==========================================
-                    echo RUNNING TESTS
-                    echo ==========================================
+                    echo Running tests...
 
                     docker run --rm ^
                         -v "%CD%:/workspace" ^
                         -w /workspace ^
                         python:3.12-slim ^
-                        sh -c "pip install --no-cache-dir -q -r app/requirements.txt && pytest -q app/test_app.py"
+                        sh -c "pip install -q -r app/requirements.txt && python -m pytest app/test_app.py -v"
 
                     if errorlevel 1 (
-                        echo ERROR: Tests failed.
+                        echo Tests FAILED.
                         exit /b 1
                     )
 
@@ -229,61 +239,61 @@ pipeline {
 
         stage('Capture Previous Deployment') {
             steps {
-                bat '''
-                    echo ==========================================
-                    echo CAPTURING PREVIOUS DEPLOYMENT
-                    echo ==========================================
-
-                    if exist previous-image.txt del /q previous-image.txt
-                    if exist previous-version.txt del /q previous-version.txt
-
-                    docker inspect "%DEPLOY_APP_CONTAINER%" ^
-                        --format="{{.Config.Image}}" ^
-                        > previous-image.txt 2>nul
-
-                    if not exist previous-image.txt (
-                        echo NONE>previous-image.txt
-                        echo NONE>previous-version.txt
-                    )
-
-                    if exist previous-image.txt (
-                        for /f "usebackq delims=" %%A in ("previous-image.txt") do (
-                            if not "%%A"=="NONE" (
-                                echo %%A>previous-image.txt
-                            )
-                        )
-                    )
-                '''
-
                 script {
-                    def previousImage = 'NONE'
-                    def previousVersion = 'NONE'
 
-                    if (fileExists('previous-image.txt')) {
-                        previousImage = readFile('previous-image.txt').trim()
-                    }
+                    bat '''
+                        if exist previous-image.txt del /q previous-image.txt
+                    '''
 
-                    if (
-                        previousImage &&
-                        previousImage != 'NONE' &&
-                        previousImage.contains(':')
-                    ) {
-                        previousVersion = previousImage.substring(
-                            previousImage.lastIndexOf(':') + 1
-                        )
-                    }
-
-                    writeFile(
-                        file: 'previous-version.txt',
-                        text: previousVersion
+                    def containerExists = bat(
+                        script: """
+                            @echo off
+                            docker inspect "%DEPLOY_APP_CONTAINER%" >nul 2>&1
+                            if errorlevel 1 exit /b 1
+                            exit /b 0
+                        """,
+                        returnStatus: true
                     )
 
-                    env.PREVIOUS_IMAGE = previousImage
-                    env.PREVIOUS_VERSION = previousVersion
+                    if (containerExists == 0) {
+
+                        bat '''
+                            docker inspect -f "{{.Config.Image}}" "%DEPLOY_APP_CONTAINER%" > previous-image.txt
+                        '''
+
+                        def previousImageFile = readFile(
+                            'previous-image.txt'
+                        ).trim()
+
+                        if (
+                            previousImageFile &&
+                            previousImageFile != 'NONE'
+                        ) {
+                            env.PREVIOUS_IMAGE = previousImageFile
+
+                            def versionMatcher =
+                                previousImageFile =~ /:(.+)$/
+
+                            if (versionMatcher.find()) {
+                                env.PREVIOUS_VERSION =
+                                    versionMatcher.group(1)
+                            }
+                        }
+                    } else {
+                        env.PREVIOUS_IMAGE = 'NONE'
+                        env.PREVIOUS_VERSION = 'NONE'
+
+                        writeFile(
+                            file: 'previous-image.txt',
+                            text: 'NONE'
+                        )
+                    }
 
                     echo ''
-                    echo "Previous Image   : ${previousImage}"
-                    echo "Previous Version : ${previousVersion}"
+                    echo 'Previous Image   : ' +
+                         env.PREVIOUS_IMAGE
+                    echo 'Previous Version : ' +
+                         env.PREVIOUS_VERSION
                     echo ''
                 }
             }
@@ -291,55 +301,77 @@ pipeline {
 
         stage('Prepare Docker Network') {
             steps {
-                bat '''
-                    echo ==========================================
-                    echo PREPARING DOCKER NETWORK
-                    echo ==========================================
+                script {
 
-                    docker network inspect "%DEPLOY_NETWORK%" >nul 2>&1
-
-                    if errorlevel 1 (
-                        echo Creating network: %DEPLOY_NETWORK%
-
-                        docker network create "%DEPLOY_NETWORK%"
-
-                        if errorlevel 1 (
-                            echo ERROR: Could not create network.
-                            exit /b 1
-                        )
-                    ) else (
-                        echo Network already exists: %DEPLOY_NETWORK%
+                    def networkExists = bat(
+                        script: """
+                            @echo off
+                            docker network inspect "%DEPLOY_NETWORK%" >nul 2>&1
+                            if errorlevel 1 exit /b 1
+                            exit /b 0
+                        """,
+                        returnStatus: true
                     )
 
-                    docker network inspect "%DEPLOY_NETWORK%" > network-inspect-before.json
-                '''
+                    if (networkExists != 0) {
+
+                        bat '''
+                            echo Creating Docker network:
+                            echo %DEPLOY_NETWORK%
+
+                            docker network create "%DEPLOY_NETWORK%"
+
+                            if errorlevel 1 (
+                                echo ERROR: Could not create Docker network.
+                                exit /b 1
+                            )
+                        '''
+
+                        echo "Network created: ${env.DEPLOY_NETWORK}"
+
+                    } else {
+
+                        echo "Network already exists: ${env.DEPLOY_NETWORK}"
+                    }
+                }
             }
         }
 
         stage('Prepare Database Volume') {
             steps {
-                bat '''
-                    echo ==========================================
-                    echo PREPARING DATABASE VOLUME
-                    echo ==========================================
+                script {
 
-                    docker volume inspect "%DEPLOY_DB_VOLUME%" >nul 2>&1
-
-                    if errorlevel 1 (
-                        echo Creating volume: %DEPLOY_DB_VOLUME%
-
-                        docker volume create "%DEPLOY_DB_VOLUME%"
-
-                        if errorlevel 1 (
-                            echo ERROR: Could not create volume.
-                            exit /b 1
-                        )
-                    ) else (
-                        echo Volume already exists: %DEPLOY_DB_VOLUME%
+                    def volumeExists = bat(
+                        script: """
+                            @echo off
+                            docker volume inspect "%DEPLOY_DB_VOLUME%" >nul 2>&1
+                            if errorlevel 1 exit /b 1
+                            exit /b 0
+                        """,
+                        returnStatus: true
                     )
 
-                    docker volume inspect "%DEPLOY_DB_VOLUME%" > volume-inspect.json
-                '''
+                    if (volumeExists != 0) {
+
+                        bat '''
+                            echo Creating database volume:
+                            echo %DEPLOY_DB_VOLUME%
+
+                            docker volume create "%DEPLOY_DB_VOLUME%"
+
+                            if errorlevel 1 (
+                                echo ERROR: Could not create database volume.
+                                exit /b 1
+                            )
+                        '''
+
+                        echo "Volume created: ${env.DEPLOY_DB_VOLUME}"
+
+                    } else {
+
+                        echo "Volume already exists: ${env.DEPLOY_DB_VOLUME}"
+                    }
+                }
             }
         }
 
@@ -347,40 +379,18 @@ pipeline {
             steps {
                 script {
 
-                    if (params.ACTION == 'DEPLOY') {
+                    echo "Building ${env.DEPLOY_IMAGE}"
 
-                        echo "Building ${env.DEPLOY_IMAGE}"
+                    bat """
+                        docker build ^
+                            --build-arg VERSION=${params.VERSION} ^
+                            -t "${env.DEPLOY_IMAGE}" .
 
-                        bat """
-                            echo ==========================================
-                            echo BUILDING DOCKER IMAGE
-                            echo ==========================================
-
-                            docker build ^
-                                --build-arg VERSION=${env.DEPLOY_VERSION} ^
-                                -t ${env.DEPLOY_IMAGE} .
-
-                            if errorlevel 1 (
-                                echo ERROR: Docker build failed.
-                                exit /b 1
-                            )
-                        """
-
-                    } else {
-
-                        echo "Checking rollback image ${env.DEPLOY_IMAGE}"
-
-                        bat """
-                            docker image inspect ${env.DEPLOY_IMAGE} >nul 2>&1
-
-                            if errorlevel 1 (
-                                echo ERROR: Rollback image ${env.DEPLOY_IMAGE} does not exist.
-                                exit /b 1
-                            )
-
-                            echo Rollback image exists.
-                        """
-                    }
+                        if errorlevel 1 (
+                            echo ERROR: Docker image build failed.
+                            exit /b 1
+                        )
+                    """
                 }
             }
         }
@@ -388,11 +398,7 @@ pipeline {
         stage('Verify Docker Image') {
             steps {
                 bat '''
-                    echo ==========================================
-                    echo VERIFYING DOCKER IMAGE
-                    echo ==========================================
-
-                    docker image inspect "%DEPLOY_IMAGE%" > image-inspect.json
+                    docker image inspect "%DEPLOY_IMAGE%"
 
                     if errorlevel 1 (
                         echo ERROR: Docker image does not exist.
@@ -402,11 +408,10 @@ pipeline {
                     echo.
                     echo Docker image verified successfully:
                     echo %DEPLOY_IMAGE%
-
                     echo.
-                    echo ===== DOCKER IMAGES =====
 
-                    docker images customer-app
+                    echo ===== DOCKER IMAGES =====
+                    docker images "%IMAGE_REPOSITORY%"
                 '''
             }
         }
@@ -415,71 +420,88 @@ pipeline {
             steps {
                 script {
 
-                    def credentialId
+                    def dbExists = bat(
+                        script: """
+                            @echo off
+                            docker inspect "%DEPLOY_DB_CONTAINER%" >nul 2>&1
+                            if errorlevel 1 exit /b 1
+                            exit /b 0
+                        """,
+                        returnStatus: true
+                    )
 
-                    if (params.ENVIRONMENT == 'DEV') {
-                        credentialId = 'db-dev'
-                    } else if (params.ENVIRONMENT == 'UAT') {
-                        credentialId = 'db-uat'
-                    } else {
-                        credentialId = 'db-production'
-                    }
+                    if (dbExists != 0) {
 
-                    withCredentials([
-                        usernamePassword(
-                            credentialsId: credentialId,
-                            usernameVariable: 'DB_USERNAME_SECRET',
-                            passwordVariable: 'DB_PASSWORD_SECRET'
-                        )
-                    ]) {
+                        echo 'Creating database container...'
 
-                        bat """
-                            echo ==========================================
-                            echo DEPLOYING DATABASE
-                            echo ==========================================
+                        withCredentials([
+                            usernamePassword(
+                                credentialsId:
+                                    params.ENVIRONMENT == 'DEV'
+                                        ? 'db-dev'
+                                        : params.ENVIRONMENT == 'UAT'
+                                            ? 'db-uat'
+                                            : 'db-production',
+                                usernameVariable: 'DB_USERNAME_SECRET',
+                                passwordVariable: 'DB_PASSWORD_SECRET'
+                            )
+                        ]) {
 
-                            docker container inspect "%DEPLOY_DB_CONTAINER%" >nul 2>&1
-
-                            if errorlevel 1 (
-
-                                echo Database container does not exist.
-                                echo Creating database container...
-
+                            bat '''
                                 docker run -d ^
                                     --name "%DEPLOY_DB_CONTAINER%" ^
                                     --network "%DEPLOY_NETWORK%" ^
-                                    --restart unless-stopped ^
-                                    -e POSTGRES_DB="%DEPLOY_DB_NAME%" ^
-                                    -e POSTGRES_USER="%DB_USERNAME_SECRET%" ^
-                                    -e POSTGRES_PASSWORD="%DB_PASSWORD_SECRET%" ^
+                                    --network-alias "%DEPLOY_DB_HOST%" ^
+                                    -e "POSTGRES_DB=%DEPLOY_DB_NAME%" ^
+                                    -e "POSTGRES_USER=%DB_USERNAME_SECRET%" ^
+                                    -e "POSTGRES_PASSWORD=%DB_PASSWORD_SECRET%" ^
                                     -v "%DEPLOY_DB_VOLUME%:/var/lib/postgresql/data" ^
-                                    -v "%CD%/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro" ^
                                     postgres:16
 
                                 if errorlevel 1 (
                                     echo ERROR: Database container creation failed.
                                     exit /b 1
                                 )
+                            '''
+                        }
 
-                            ) else (
+                    } else {
 
-                                echo Database container already exists.
+                        echo 'Database container already exists.'
 
-                                docker start "%DEPLOY_DB_CONTAINER%" >nul 2>&1
-
-                                echo Ensuring database is connected to expected network.
-
-                                docker network connect "%DEPLOY_NETWORK%" "%DEPLOY_DB_CONTAINER%" >nul 2>&1
-
-                                if errorlevel 1 (
-                                    echo Database is already connected to the network.
-                                )
-                            )
-
-                            echo.
-                            echo Database ready: %DEPLOY_DB_CONTAINER%
-                        """
+                        bat '''
+                            docker start "%DEPLOY_DB_CONTAINER%" >nul 2>&1
+                        '''
                     }
+
+                    echo 'Ensuring database is connected to expected network.'
+
+                    def dbOnNetwork = bat(
+                        script: """
+                            @echo off
+                            docker network inspect "%DEPLOY_NETWORK%" --format="{{range .Containers}}{{.Name}} {{end}}" > db-network-members.txt 2>nul
+                            findstr /i "%DEPLOY_DB_CONTAINER%" db-network-members.txt >nul
+                            if errorlevel 1 exit /b 1
+                            exit /b 0
+                        """,
+                        returnStatus: true
+                    )
+
+                    if (dbOnNetwork != 0) {
+
+                        bat '''
+                            docker network connect "%DEPLOY_NETWORK%" "%DEPLOY_DB_CONTAINER%"
+
+                            if errorlevel 1 (
+                                echo ERROR: Could not connect database to network.
+                                exit /b 1
+                            )
+                        '''
+                    } else {
+                        echo 'Database already connected to expected network.'
+                    }
+
+                    echo "Database ready: ${env.DEPLOY_DB_CONTAINER}"
                 }
             }
         }
@@ -488,34 +510,48 @@ pipeline {
             steps {
                 script {
 
-                    timeout(time: 120, unit: 'SECONDS') {
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId:
+                                params.ENVIRONMENT == 'DEV'
+                                    ? 'db-dev'
+                                    : params.ENVIRONMENT == 'UAT'
+                                        ? 'db-uat'
+                                        : 'db-production',
+                            usernameVariable: 'DB_USERNAME_SECRET',
+                            passwordVariable: 'DB_PASSWORD_SECRET'
+                        )
+                    ]) {
 
-                        waitUntil {
+                        bat '''
+                            echo Waiting for database...
 
-                            def result = bat(
-                                script: '''
-                                    docker exec "%DEPLOY_DB_CONTAINER%" ^
-                                        pg_isready ^
-                                        -U "%DEPLOY_DB_USER%" ^
-                                        -d "%DEPLOY_DB_NAME%"
-                                ''',
-                                returnStatus: true
+                            set DB_READY=NO
+
+                            for /L %%i in (1,1,30) do (
+                                docker exec "%DEPLOY_DB_CONTAINER%" ^
+                                    pg_isready ^
+                                    -U "%DB_USERNAME_SECRET%" ^
+                                    -d "%DEPLOY_DB_NAME%" >nul 2>&1
+
+                                if not errorlevel 1 (
+                                    set DB_READY=YES
+                                    goto :DBREADY
+                                )
+
+                                timeout /t 2 /nobreak >nul
                             )
 
-                            if (result == 0) {
-                                echo 'Database is READY.'
-                                return true
-                            }
+                            :DBREADY
 
-                            echo 'Waiting for database...'
-
-                            sleep(
-                                time: 5,
-                                unit: 'SECONDS'
+                            if "%DB_READY%"=="NO" (
+                                echo ERROR: Database did not become ready.
+                                docker logs "%DEPLOY_DB_CONTAINER%"
+                                exit /b 1
                             )
 
-                            return false
-                        }
+                            echo Database is READY.
+                        '''
                     }
                 }
             }
@@ -525,119 +561,110 @@ pipeline {
             steps {
                 script {
 
-                    def credentialId
-
-                    if (params.ENVIRONMENT == 'DEV') {
-                        credentialId = 'db-dev'
-                    } else if (params.ENVIRONMENT == 'UAT') {
-                        credentialId = 'db-uat'
-                    } else {
-                        credentialId = 'db-production'
-                    }
-
                     echo 'Deploying application...'
+
+                    bat '''
+                        docker rm -f "%DEPLOY_APP_CONTAINER%" >nul 2>&1
+                    '''
 
                     withCredentials([
                         usernamePassword(
-                            credentialsId: credentialId,
+                            credentialsId:
+                                params.ENVIRONMENT == 'DEV'
+                                    ? 'db-dev'
+                                    : params.ENVIRONMENT == 'UAT'
+                                        ? 'db-uat'
+                                        : 'db-production',
                             usernameVariable: 'DB_USERNAME_SECRET',
                             passwordVariable: 'DB_PASSWORD_SECRET'
                         )
                     ]) {
 
-                        bat """
-                            echo ==========================================
-                            echo DEPLOYING APPLICATION
-                            echo ==========================================
-
-                            docker rm -f "%DEPLOY_APP_CONTAINER%" >nul 2>&1
-
+                        bat '''
                             docker run -d ^
                                 --name "%DEPLOY_APP_CONTAINER%" ^
                                 --network "%DEPLOY_NETWORK%" ^
-                                --restart unless-stopped ^
                                 -p "%DEPLOY_HOST_PORT%:%CONTAINER_PORT%" ^
-                                -e APP_ENV="%ENVIRONMENT%" ^
-                                -e APP_VERSION="%DEPLOY_VERSION%" ^
-                                -e DB_HOST="%DEPLOY_DB_HOST%" ^
-                                -e DB_PORT="5432" ^
-                                -e DB_NAME="%DEPLOY_DB_NAME%" ^
-                                -e DB_USER="%DB_USERNAME_SECRET%" ^
-                                -e DB_PASSWORD="%DB_PASSWORD_SECRET%" ^
+                                -e "APP_ENV=%ENVIRONMENT%" ^
+                                -e "APP_VERSION=%VERSION%" ^
+                                -e "DB_HOST=%DEPLOY_DB_HOST%" ^
+                                -e "DB_PORT=5432" ^
+                                -e "DB_NAME=%DEPLOY_DB_NAME%" ^
+                                -e "DB_USER=%DB_USERNAME_SECRET%" ^
+                                -e "DB_PASSWORD=%DB_PASSWORD_SECRET%" ^
                                 "%DEPLOY_IMAGE%"
 
                             if errorlevel 1 (
-                                echo ERROR: Application failed to start.
+                                echo ERROR: Application container failed to start.
                                 exit /b 1
                             )
-
-                            echo.
-                            echo Application started: %DEPLOY_APP_CONTAINER%
-                        """
+                        '''
                     }
+
+                    echo "Application started: ${env.DEPLOY_APP_CONTAINER}"
                 }
             }
         }
 
+        /*
+         * IMPORTANT:
+         * This is the corrected Windows validation stage.
+         * There is NO PowerShell code here.
+         */
         stage('Validate Containers') {
             steps {
                 bat '''
-                    echo ==========================================
-                    echo VALIDATING CONTAINERS
-                    echo ==========================================
+                    echo ============================================
+                    echo VALIDATING APPLICATION CONTAINER
+                    echo ============================================
 
-                    echo.
-                    echo ===== APPLICATION CONTAINER =====
-
-                    docker ps --filter "name=%DEPLOY_APP_CONTAINER%" ^
-                        --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"
-
-                    docker inspect -f "{{.State.Running}}" "%DEPLOY_APP_CONTAINER%" > app-running.txt
-
+                    docker inspect "%DEPLOY_APP_CONTAINER%" >nul 2>&1
                     if errorlevel 1 (
-                        echo ERROR: Cannot inspect application container.
+                        echo ERROR: Application container does not exist.
+                        docker ps -a
                         docker logs "%DEPLOY_APP_CONTAINER%"
                         exit /b 1
                     )
 
-                    findstr /i "^true$" app-running.txt >nul
+                    docker inspect -f "{{.State.Running}}" "%DEPLOY_APP_CONTAINER%" > app-running.txt
 
+                    findstr /i "true" app-running.txt >nul
                     if errorlevel 1 (
-                        echo ERROR: Application container is NOT running.
+                        echo ERROR: Application container is not running.
+                        type app-running.txt
                         docker logs "%DEPLOY_APP_CONTAINER%"
                         exit /b 1
                     )
 
                     echo Application container is RUNNING.
 
-                    echo.
-                    echo ===== DATABASE CONTAINER =====
+                    echo ============================================
+                    echo VALIDATING DATABASE CONTAINER
+                    echo ============================================
 
-                    docker ps --filter "name=%DEPLOY_DB_CONTAINER%" ^
-                        --format "table {{.Names}}\\t{{.Status}}\\t{{.Ports}}"
-
-                    docker inspect -f "{{.State.Running}}" "%DEPLOY_DB_CONTAINER%" > db-running.txt
-
+                    docker inspect "%DEPLOY_DB_CONTAINER%" >nul 2>&1
                     if errorlevel 1 (
-                        echo ERROR: Cannot inspect database container.
+                        echo ERROR: Database container does not exist.
+                        docker ps -a
                         docker logs "%DEPLOY_DB_CONTAINER%"
                         exit /b 1
                     )
 
-                    findstr /i "^true$" db-running.txt >nul
+                    docker inspect -f "{{.State.Running}}" "%DEPLOY_DB_CONTAINER%" > db-running.txt
 
+                    findstr /i "true" db-running.txt >nul
                     if errorlevel 1 (
-                        echo ERROR: Database container is NOT running.
+                        echo ERROR: Database container is not running.
+                        type db-running.txt
                         docker logs "%DEPLOY_DB_CONTAINER%"
                         exit /b 1
                     )
 
                     echo Database container is RUNNING.
 
-                    echo.
-                    echo ==========================================
-                    echo CONTAINER VALIDATION SUCCESSFUL
-                    echo ==========================================
+                    echo ============================================
+                    echo CONTAINER VALIDATION PASSED
+                    echo ============================================
                 '''
             }
         }
@@ -645,48 +672,36 @@ pipeline {
         stage('Validate Network') {
             steps {
                 bat '''
-                    echo ==========================================
+                    echo ============================================
                     echo VALIDATING DOCKER NETWORK
-                    echo ==========================================
+                    echo ============================================
 
-                    docker network inspect "%DEPLOY_NETWORK%" > network-inspect-final.json
+                    docker network inspect "%DEPLOY_NETWORK%"
 
                     if errorlevel 1 (
-                        echo ERROR: Network inspection failed.
+                        echo ERROR: Network does not exist.
                         exit /b 1
                     )
 
-                    echo.
-                    echo Network:
-                    docker network inspect "%DEPLOY_NETWORK%" ^
-                        --format="{{.Name}}"
+                    docker network inspect "%DEPLOY_NETWORK%" --format="{{range .Containers}}{{.Name}} {{end}}" > network-containers.txt
 
-                    echo.
                     echo Connected containers:
-                    docker network inspect "%DEPLOY_NETWORK%" ^
-                        --format="{{range .Containers}}{{.Name}} {{end}}"
+                    type network-containers.txt
 
-                    echo.
-
-                    docker network inspect "%DEPLOY_NETWORK%" ^
-                        --format="{{range .Containers}}{{.Name}} {{end}}" ^
-                        | findstr /i "%DEPLOY_APP_CONTAINER%" >nul
-
+                    findstr /i "%DEPLOY_APP_CONTAINER%" network-containers.txt >nul
                     if errorlevel 1 (
                         echo ERROR: Application is not connected to expected network.
                         exit /b 1
                     )
 
-                    docker network inspect "%DEPLOY_NETWORK%" ^
-                        --format="{{range .Containers}}{{.Name}} {{end}}" ^
-                        | findstr /i "%DEPLOY_DB_CONTAINER%" >nul
-
+                    findstr /i "%DEPLOY_DB_CONTAINER%" network-containers.txt >nul
                     if errorlevel 1 (
                         echo ERROR: Database is not connected to expected network.
                         exit /b 1
                     )
 
-                    echo Network validation successful.
+                    echo Application and database are on:
+                    echo %DEPLOY_NETWORK%
                 '''
             }
         }
@@ -694,18 +709,17 @@ pipeline {
         stage('Health Check') {
             steps {
                 bat '''
-                    echo ==========================================
-                    echo HEALTH CHECK
-                    echo ==========================================
+                    echo ============================================
+                    echo APPLICATION HEALTH CHECK
+                    echo ============================================
 
-                    timeout /t 5 /nobreak >nul
+                    timeout /t 3 /nobreak >nul
 
-                    curl.exe -fsS ^
-                        "http://localhost:%DEPLOY_HOST_PORT%/health" ^
-                        -o health-response.json
+                    curl.exe -fsS "http://localhost:%DEPLOY_HOST_PORT%/health" -o health-response.json
 
                     if errorlevel 1 (
                         echo ERROR: Health endpoint failed.
+                        type health-response.json 2>nul
                         docker logs "%DEPLOY_APP_CONTAINER%"
                         exit /b 1
                     )
@@ -714,7 +728,7 @@ pipeline {
                     type health-response.json
 
                     echo.
-                    echo Health check PASSED.
+                    echo HEALTH CHECK PASSED.
                 '''
             }
         }
@@ -722,26 +736,19 @@ pipeline {
         stage('Application To Database Connectivity') {
             steps {
                 bat '''
-                    echo ==========================================
+                    echo ============================================
                     echo APPLICATION TO DATABASE CONNECTIVITY
-                    echo ==========================================
+                    echo ============================================
 
-                    docker exec "%DEPLOY_APP_CONTAINER%" ^
-                        python -c "import os,socket; h=os.environ['DB_HOST']; p=int(os.environ.get('DB_PORT','5432')); s=socket.create_connection((h,p),5); print('Database reachable from application:',h,p); s.close()"
+                    docker exec "%DEPLOY_APP_CONTAINER%" python -c "import os,socket; h=os.environ['DB_HOST']; p=int(os.environ.get('DB_PORT','5432')); s=socket.create_connection((h,p),5); print('Database reachable from application:',h,p); s.close()"
 
                     if errorlevel 1 (
                         echo ERROR: Application cannot reach database.
-                        echo.
-                        echo Application logs:
                         docker logs "%DEPLOY_APP_CONTAINER%"
-                        echo.
-                        echo Network:
-                        docker network inspect "%DEPLOY_NETWORK%"
                         exit /b 1
                     )
 
-                    echo.
-                    echo Application successfully reaches database.
+                    echo Application can reach database successfully.
                 '''
             }
         }
@@ -749,30 +756,26 @@ pipeline {
         stage('Environment Validation') {
             steps {
                 bat '''
-                    echo ==========================================
+                    echo ============================================
                     echo ENVIRONMENT VALIDATION
-                    echo ==========================================
+                    echo ============================================
 
-                    curl.exe -fsS ^
-                        "http://localhost:%DEPLOY_HOST_PORT%/environment" ^
-                        -o environment-response.json
+                    curl.exe -fsS "http://localhost:%DEPLOY_HOST_PORT%/environment" -o environment-response.json
 
                     if errorlevel 1 (
                         echo ERROR: Environment endpoint failed.
+                        type environment-response.json 2>nul
                         exit /b 1
                     )
 
                     echo Environment response:
                     type environment-response.json
 
-                    echo.
-                    echo Expected environment:
-                    echo %ENVIRONMENT%
-
                     findstr /i "%ENVIRONMENT%" environment-response.json >nul
 
                     if errorlevel 1 (
-                        echo ERROR: Environment does not match.
+                        echo ERROR: Expected environment was not found.
+                        echo Expected: %ENVIRONMENT%
                         exit /b 1
                     )
 
@@ -784,30 +787,26 @@ pipeline {
         stage('Version Validation') {
             steps {
                 bat '''
-                    echo ==========================================
+                    echo ============================================
                     echo VERSION VALIDATION
-                    echo ==========================================
+                    echo ============================================
 
-                    curl.exe -fsS ^
-                        "http://localhost:%DEPLOY_HOST_PORT%/version" ^
-                        -o version-response.json
+                    curl.exe -fsS "http://localhost:%DEPLOY_HOST_PORT%/version" -o version-response.json
 
                     if errorlevel 1 (
                         echo ERROR: Version endpoint failed.
+                        type version-response.json 2>nul
                         exit /b 1
                     )
 
                     echo Version response:
                     type version-response.json
 
-                    echo.
-                    echo Expected version:
-                    echo %DEPLOY_VERSION%
-
-                    findstr /i "%DEPLOY_VERSION%" version-response.json >nul
+                    findstr /i "%VERSION%" version-response.json >nul
 
                     if errorlevel 1 (
-                        echo ERROR: Version does not match.
+                        echo ERROR: Requested version was not found.
+                        echo Expected version: %VERSION%
                         exit /b 1
                     )
 
@@ -819,54 +818,42 @@ pipeline {
         stage('Volume Inspection') {
             steps {
                 bat '''
-                    echo ==========================================
-                    echo VOLUME INSPECTION
-                    echo ==========================================
+                    echo ============================================
+                    echo DATABASE VOLUME INSPECTION
+                    echo ============================================
 
-                    docker volume inspect "%DEPLOY_DB_VOLUME%" > volume-inspect-final.json
+                    docker volume inspect "%DEPLOY_DB_VOLUME%"
 
                     if errorlevel 1 (
-                        echo ERROR: Volume inspection failed.
+                        echo ERROR: Database volume inspection failed.
                         exit /b 1
                     )
 
                     echo.
                     echo Database volume:
-                    docker volume inspect "%DEPLOY_DB_VOLUME%"
-
+                    echo %DEPLOY_DB_VOLUME%
                     echo.
-                    echo Application port:
-                    docker port "%DEPLOY_APP_CONTAINER%"
-
-                    echo.
-                    echo Persistent storage validation PASSED.
+                    echo Volume inspection PASSED.
                 '''
             }
         }
 
         stage('Deployment Successful') {
             steps {
-                bat '''
-                    echo.
-                    echo ============================================================
-                    echo                 DEPLOYMENT SUCCESSFUL
-                    echo ============================================================
-                    echo.
-                    echo Environment           : %ENVIRONMENT%
-                    echo Action                : %ACTION%
-                    echo Version               : %DEPLOY_VERSION%
-                    echo Docker Image          : %DEPLOY_IMAGE%
-                    echo Git Branch            : %DEPLOY_GIT_BRANCH%
-                    echo Application Container : %DEPLOY_APP_CONTAINER%
-                    echo Database Container    : %DEPLOY_DB_CONTAINER%
-                    echo Network               : %DEPLOY_NETWORK%
-                    echo Database Volume       : %DEPLOY_DB_VOLUME%
-                    echo Host Port             : %DEPLOY_HOST_PORT%
-                    echo Container Port        : %CONTAINER_PORT%
-                    echo Application URL       : http://localhost:%DEPLOY_HOST_PORT%
-                    echo.
-                    echo ============================================================
-                '''
+                echo ''
+                echo '============================================================'
+                echo 'DEPLOYMENT SUCCESSFUL'
+                echo '============================================================'
+                echo "Environment : ${params.ENVIRONMENT}"
+                echo "Action      : ${params.ACTION}"
+                echo "Version     : ${params.VERSION}"
+                echo "Image       : ${env.DEPLOY_IMAGE}"
+                echo "Application : ${env.DEPLOY_APP_CONTAINER}"
+                echo "Database    : ${env.DEPLOY_DB_CONTAINER}"
+                echo "Network     : ${env.DEPLOY_NETWORK}"
+                echo "Host Port   : ${env.DEPLOY_HOST_PORT}"
+                echo '============================================================'
+                echo ''
             }
         }
     }
@@ -874,166 +861,127 @@ pipeline {
     post {
 
         always {
+            script {
 
-            echo 'Collecting deployment evidence...'
+                echo 'Collecting deployment evidence...'
 
-            bat '''
-                echo ==========================================
-                echo FINAL DOCKER STATUS
-                echo ==========================================
+                bat '''
+                    docker ps -a > evidence-docker-ps.txt 2>&1
+                    docker images > evidence-docker-images.txt 2>&1
+                    docker network inspect "%DEPLOY_NETWORK%" > evidence-network.txt 2>&1
+                    docker volume inspect "%DEPLOY_DB_VOLUME%" > evidence-volume.txt 2>&1
+                    docker port "%DEPLOY_APP_CONTAINER%" > evidence-port.txt 2>&1
+                '''
 
-                docker ps -a > evidence-docker-ps.txt
-
-                type evidence-docker-ps.txt
-
-                echo.
-                echo ==========================================
-                echo DOCKER IMAGES
-                echo ==========================================
-
-                docker images customer-app > evidence-docker-images.txt
-
-                type evidence-docker-images.txt
-
-                echo.
-                echo ==========================================
-                echo NETWORK
-                echo ==========================================
-
-                docker network inspect "%DEPLOY_NETWORK%" > evidence-network.txt 2>nul
-
-                echo.
-                echo ==========================================
-                echo VOLUME
-                echo ==========================================
-
-                docker volume inspect "%DEPLOY_DB_VOLUME%" > evidence-volume.txt 2>nul
-
-                echo.
-                echo ==========================================
-                echo PORT
-                echo ==========================================
-
-                docker port "%DEPLOY_APP_CONTAINER%" > evidence-port.txt 2>nul
-            '''
-
-            archiveArtifacts(
-                artifacts: '''
-                    previous-image.txt,
-                    previous-version.txt,
-                    image-inspect.json,
-                    health-response.json,
-                    environment-response.json,
-                    version-response.json,
-                    network-inspect-before.json,
-                    network-inspect-final.json,
-                    volume-inspect.json,
-                    volume-inspect-final.json,
-                    evidence-docker-ps.txt,
-                    evidence-docker-images.txt,
-                    evidence-network.txt,
-                    evidence-volume.txt,
-                    evidence-port.txt
-                ''',
-                allowEmptyArchive: true,
-                fingerprint: true
-            )
+                archiveArtifacts(
+                    artifacts:
+                        'evidence-*.txt,' +
+                        'health-response.json,' +
+                        'environment-response.json,' +
+                        'version-response.json,' +
+                        'previous-image.txt,' +
+                        'app-running.txt,' +
+                        'db-running.txt,' +
+                        'network-containers.txt,' +
+                        'db-network-members.txt',
+                    allowEmptyArchive: true,
+                    fingerprint: true
+                )
+            }
         }
 
         success {
+            echo ''
             echo '============================================================'
-            echo 'PIPELINE COMPLETED SUCCESSFULLY'
+            echo 'PIPELINE SUCCESSFUL'
             echo '============================================================'
+            echo "Environment : ${params.ENVIRONMENT}"
+            echo "Action      : ${params.ACTION}"
+            echo "Version     : ${params.VERSION}"
+            echo '============================================================'
+            echo ''
         }
 
         failure {
-
             script {
 
+                echo ''
                 echo '============================================================'
                 echo 'PIPELINE FAILED'
                 echo '============================================================'
-
                 echo "Environment : ${params.ENVIRONMENT}"
                 echo "Action      : ${params.ACTION}"
                 echo "Version     : ${params.VERSION}"
+                echo '============================================================'
+                echo ''
 
+                /*
+                 * Automatic rollback is only performed for
+                 * PRODUCTION DEPLOY failures when a previous
+                 * image was captured.
+                 */
                 if (
                     params.ENVIRONMENT == 'PRODUCTION' &&
                     params.ACTION == 'DEPLOY' &&
-                    env.PREVIOUS_IMAGE &&
-                    env.PREVIOUS_IMAGE != 'NONE'
+                    env.PREVIOUS_IMAGE != 'NONE' &&
+                    env.PREVIOUS_IMAGE?.trim()
                 ) {
 
-                    echo 'Production deployment failed.'
-                    echo 'Attempting automatic rollback.'
+                    echo 'Automatic production rollback starting...'
+                    echo "Rollback image: ${env.PREVIOUS_IMAGE}"
 
-                    def rollbackImage = env.PREVIOUS_IMAGE
-                    def rollbackVersion = env.PREVIOUS_VERSION
+                    bat '''
+                        echo ============================================
+                        echo PRODUCTION ROLLBACK
+                        echo ============================================
 
-                    echo "Rollback Image   : ${rollbackImage}"
-                    echo "Rollback Version : ${rollbackVersion}"
+                        docker rm -f "%DEPLOY_APP_CONTAINER%" >nul 2>&1
 
-                    def credentialId = 'db-production'
+                        docker run -d ^
+                            --name "%DEPLOY_APP_CONTAINER%" ^
+                            --network "%DEPLOY_NETWORK%" ^
+                            -p "%DEPLOY_HOST_PORT%:%CONTAINER_PORT%" ^
+                            -e "APP_ENV=%ENVIRONMENT%" ^
+                            -e "APP_VERSION=%PREVIOUS_VERSION%" ^
+                            -e "DB_HOST=%DEPLOY_DB_HOST%" ^
+                            -e "DB_PORT=5432" ^
+                            -e "DB_NAME=%DEPLOY_DB_NAME%" ^
+                            -e "DB_USER=%DB_USERNAME_SECRET%" ^
+                            -e "DB_PASSWORD=%DB_PASSWORD_SECRET%" ^
+                            "%PREVIOUS_IMAGE%"
+
+                        if errorlevel 1 (
+                            echo ERROR: Rollback container could not start.
+                            exit /b 1
+                        )
+                    '''
 
                     withCredentials([
                         usernamePassword(
-                            credentialsId: credentialId,
+                            credentialsId: 'db-production',
                             usernameVariable: 'DB_USERNAME_SECRET',
                             passwordVariable: 'DB_PASSWORD_SECRET'
                         )
                     ]) {
 
-                        bat """
-                            echo ==========================================
-                            echo AUTOMATIC PRODUCTION ROLLBACK
-                            echo ==========================================
-
-                            docker image inspect "${rollbackImage}" >nul 2>&1
-
-                            if errorlevel 1 (
-                                echo ERROR: Previous image does not exist.
-                                exit /b 1
-                            )
-
-                            docker rm -f "%DEPLOY_APP_CONTAINER%" >nul 2>&1
-
-                            docker run -d ^
-                                --name "%DEPLOY_APP_CONTAINER%" ^
-                                --network "%DEPLOY_NETWORK%" ^
-                                --restart unless-stopped ^
-                                -p "%DEPLOY_HOST_PORT%:%CONTAINER_PORT%" ^
-                                -e APP_ENV="PRODUCTION" ^
-                                -e APP_VERSION="${rollbackVersion}" ^
-                                -e DB_HOST="%DEPLOY_DB_HOST%" ^
-                                -e DB_PORT="5432" ^
-                                -e DB_NAME="%DEPLOY_DB_NAME%" ^
-                                -e DB_USER="%DB_USERNAME_SECRET%" ^
-                                -e DB_PASSWORD="%DB_PASSWORD_SECRET%" ^
-                                "${rollbackImage}"
-
-                            if errorlevel 1 (
-                                echo ERROR: Rollback container failed to start.
-                                exit /b 1
-                            )
+                        bat '''
+                            echo Waiting for rollback application...
 
                             timeout /t 5 /nobreak >nul
 
                             docker inspect -f "{{.State.Running}}" "%DEPLOY_APP_CONTAINER%" > rollback-running.txt
 
-                            findstr /i "^true$" rollback-running.txt >nul
+                            findstr /i "true" rollback-running.txt >nul
 
                             if errorlevel 1 (
-                                echo ERROR: Rolled back application is not running.
+                                echo ERROR: Rollback application is not running.
                                 docker logs "%DEPLOY_APP_CONTAINER%"
                                 exit /b 1
                             )
 
-                            echo Rollback container is RUNNING.
+                            echo Rollback application is RUNNING.
 
-                            curl.exe -fsS ^
-                                "http://localhost:%DEPLOY_HOST_PORT%/health" ^
-                                -o rollback-health.json
+                            curl.exe -fsS "http://localhost:%DEPLOY_HOST_PORT%/health" -o rollback-health.json
 
                             if errorlevel 1 (
                                 echo ERROR: Rollback health check failed.
@@ -1041,16 +989,61 @@ pipeline {
                                 exit /b 1
                             )
 
+                            echo Rollback health response:
+                            type rollback-health.json
+
+                            curl.exe -fsS "http://localhost:%DEPLOY_HOST_PORT%/version" -o rollback-version.json
+
+                            if errorlevel 1 (
+                                echo ERROR: Rollback version endpoint failed.
+                                exit /b 1
+                            )
+
+                            echo Rollback version response:
+                            type rollback-version.json
+
+                            findstr /i "%PREVIOUS_VERSION%" rollback-version.json >nul
+
+                            if errorlevel 1 (
+                                echo ERROR: Rollback version does not match previous version.
+                                exit /b 1
+                            )
+
+                            docker exec "%DEPLOY_APP_CONTAINER%" python -c "import os,socket; h=os.environ['DB_HOST']; p=int(os.environ.get('DB_PORT','5432')); s=socket.create_connection((h,p),5); print('Rollback application can reach database:',h,p); s.close()"
+
+                            if errorlevel 1 (
+                                echo ERROR: Rollback application cannot reach database.
+                                docker logs "%DEPLOY_APP_CONTAINER%"
+                                exit /b 1
+                            )
+
                             echo.
-                            echo ============================================================
-                            echo              PRODUCTION ROLLBACK SUCCESSFUL
-                            echo ============================================================
-                            echo Restored Image   : ${rollbackImage}
-                            echo Restored Version : ${rollbackVersion}
-                            echo ============================================================
-                        """
+                            echo ============================================
+                            echo ROLLBACK VALIDATION PASSED
+                            echo ============================================
+                            echo Restored version: %PREVIOUS_VERSION%
+                            echo Image: %PREVIOUS_IMAGE%
+                            echo ============================================
+                        '''
                     }
 
+                    archiveArtifacts(
+                        artifacts:
+                            'rollback-running.txt,' +
+                            'rollback-health.json,' +
+                            'rollback-version.json',
+                        allowEmptyArchive: true,
+                        fingerprint: true
+                    )
+
+                    echo ''
+                    echo '============================================================'
+                    echo 'ROLLBACK SUCCESSFUL'
+                    echo '============================================================'
+                    echo "Restored Image   : ${env.PREVIOUS_IMAGE}"
+                    echo "Restored Version : ${env.PREVIOUS_VERSION}"
+                    echo '============================================================'
+                    echo ''
                 } else {
 
                     echo 'Automatic rollback was not required.'
