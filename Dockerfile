@@ -1,9 +1,10 @@
-FROM python:3.12-slim
+FROM python:3.11-slim
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
 WORKDIR /app
-COPY app/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app/ .
+COPY . .
 EXPOSE 8080
-ARG VERSION=dev
-ENV APP_VERSION=${VERSION}
-CMD ["python", "app.py"]
+CMD ["uvicorn", "app.app:app", "--host", "0.0.0.0", "--port", "8080"]
