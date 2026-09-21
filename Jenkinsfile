@@ -1,3 +1,4 @@
+```groovy
 pipeline {
 
     agent any
@@ -260,6 +261,7 @@ Run Tests             : ${params.RUN_TESTS}
                     def containerExists = bat(
                         script: """
                             @echo off
+
                             docker inspect "%DEPLOY_APP_CONTAINER%" >nul 2>&1
 
                             if errorlevel 1 exit /b 1
@@ -341,6 +343,8 @@ Previous Version : ${env.PREVIOUS_VERSION}
                                 echo ERROR: Could not create Docker network.
                                 exit /b 1
                             )
+
+                            echo Docker network created.
                         '''
 
                     } else {
@@ -379,6 +383,8 @@ Previous Version : ${env.PREVIOUS_VERSION}
                                 echo ERROR: Could not create database volume.
                                 exit /b 1
                             )
+
+                            echo Database volume created.
                         '''
 
                     } else {
@@ -484,6 +490,8 @@ Previous Version : ${env.PREVIOUS_VERSION}
                                     echo ERROR: Database container creation failed.
                                     exit /b 1
                                 )
+
+                                echo Database container created.
                             '''
                         }
 
@@ -498,8 +506,8 @@ Previous Version : ${env.PREVIOUS_VERSION}
 
                     /*
                      * IMPORTANT:
-                     * Check whether DB is already connected to the
-                     * expected network before running docker network connect.
+                     * Check Docker network membership before attempting
+                     * docker network connect.
                      */
 
                     def dbOnNetwork = bat(
@@ -529,7 +537,7 @@ Previous Version : ${env.PREVIOUS_VERSION}
                                 exit /b 1
                             )
 
-                            echo Database connected to network.
+                            echo Database connected to expected network.
                         '''
 
                     } else {
@@ -716,7 +724,9 @@ Previous Version : ${env.PREVIOUS_VERSION}
         stage('Validate Network') {
             steps {
                 bat '''
-                    echo Validating Docker network...
+                    echo ============================================
+                    echo VALIDATING DOCKER NETWORK
+                    echo ============================================
 
                     docker network inspect "%DEPLOY_NETWORK%"
 
@@ -727,6 +737,7 @@ Previous Version : ${env.PREVIOUS_VERSION}
 
                     docker network inspect "%DEPLOY_NETWORK%" --format="{{range .Containers}}{{.Name}} {{end}}" > network-containers.txt
 
+                    echo.
                     echo Connected containers:
                     type network-containers.txt
 
@@ -748,6 +759,7 @@ Previous Version : ${env.PREVIOUS_VERSION}
                     echo Application and database are on:
                     echo %DEPLOY_NETWORK%
 
+                    echo.
                     echo Network validation PASSED.
                 '''
             }
@@ -756,8 +768,11 @@ Previous Version : ${env.PREVIOUS_VERSION}
         stage('Health Check') {
             steps {
                 bat '''
-                    echo Waiting for application...
+                    echo ============================================
+                    echo APPLICATION HEALTH CHECK
+                    echo ============================================
 
+                    echo Waiting for application...
                     timeout /t 3 /nobreak >nul
 
                     echo Checking health endpoint...
@@ -784,7 +799,9 @@ Previous Version : ${env.PREVIOUS_VERSION}
         stage('Application To Database Connectivity') {
             steps {
                 bat '''
-                    echo Testing application-to-database connectivity...
+                    echo ============================================
+                    echo APPLICATION TO DATABASE CONNECTIVITY
+                    echo ============================================
 
                     docker exec "%DEPLOY_APP_CONTAINER%" python -c "import os,socket; h=os.environ['DB_HOST']; p=int(os.environ.get('DB_PORT','5432')); s=socket.create_connection((h,p),5); print('Database reachable from application:',h,p); s.close()"
 
@@ -802,7 +819,9 @@ Previous Version : ${env.PREVIOUS_VERSION}
         stage('Environment Validation') {
             steps {
                 bat '''
-                    echo Validating environment...
+                    echo ============================================
+                    echo ENVIRONMENT VALIDATION
+                    echo ============================================
 
                     curl.exe -fsS "http://localhost:%DEPLOY_HOST_PORT%/environment" -o environment-response.json
 
@@ -824,6 +843,7 @@ Previous Version : ${env.PREVIOUS_VERSION}
                         exit /b 1
                     )
 
+                    echo.
                     echo Environment validation PASSED.
                 '''
             }
@@ -832,7 +852,9 @@ Previous Version : ${env.PREVIOUS_VERSION}
         stage('Version Validation') {
             steps {
                 bat '''
-                    echo Validating application version...
+                    echo ============================================
+                    echo VERSION VALIDATION
+                    echo ============================================
 
                     curl.exe -fsS "http://localhost:%DEPLOY_HOST_PORT%/version" -o version-response.json
 
@@ -854,6 +876,7 @@ Previous Version : ${env.PREVIOUS_VERSION}
                         exit /b 1
                     )
 
+                    echo.
                     echo Version validation PASSED.
                 '''
             }
@@ -862,7 +885,9 @@ Previous Version : ${env.PREVIOUS_VERSION}
         stage('Volume Inspection') {
             steps {
                 bat '''
-                    echo Inspecting database volume...
+                    echo ============================================
+                    echo DATABASE VOLUME INSPECTION
+                    echo ============================================
 
                     docker volume inspect "%DEPLOY_DB_VOLUME%"
 
@@ -871,6 +896,7 @@ Previous Version : ${env.PREVIOUS_VERSION}
                         exit /b 1
                     )
 
+                    echo.
                     echo Volume inspection PASSED.
                 '''
             }
@@ -972,6 +998,10 @@ Version     : ${params.VERSION}
                         echo "Rollback image: ${env.PREVIOUS_IMAGE}"
 
                         bat '''
+                            echo ============================================
+                            echo PRODUCTION ROLLBACK
+                            echo ============================================
+
                             echo Removing failed production application...
 
                             docker rm -f "%DEPLOY_APP_CONTAINER%" >nul 2>&1
@@ -1086,3 +1116,4 @@ Environment      : PRODUCTION
         }
     }
 }
+```
